@@ -26,8 +26,13 @@ public class ApiExtended
 
 	private ApiExtended(Api api) => Api = api;
 
+	private static readonly SemaphoreSlim InteractiveLoginGate = new(1, 1);
+
 	/// <summary>Get api from existing tokens else login with 'eager' choice. External browser url is provided. Response can be external browser login or continuing with native api callbacks.</summary>
-	public static async Task<ApiExtended> CreateAsync(Account account)
+	public static Task<ApiExtended> CreateAsync(Account account)
+		=> CreateAsync(account, allowInteractiveLogin: true);
+
+	public static async Task<ApiExtended> CreateAsync(Account account, bool allowInteractiveLogin)
 	{
 		ArgumentValidator.EnsureNotNull(account, nameof(account));
 		ArgumentValidator.EnsureNotNull(account.AccountId, nameof(account.AccountId));
@@ -46,25 +51,36 @@ public class ApiExtended
 					account.GetIdentityTokensJsonPath());
 			return new ApiExtended(api);
 		}
-		catch
+		catch (Exception ex)
 		{
+			if (!allowInteractiveLogin)
+				throw new AuthenticationRequiredException(account, innerException: ex);
+
 			if (LoginChoiceFactory is null)
 				throw new InvalidOperationException($"The UI module must first set {nameof(LoginChoiceFactory)} before attempting to create the api");
 
-			Serilog.Log.Logger.Information("{@DebugInfo}", new
+			await InteractiveLoginGate.WaitAsync();
+			try
 			{
-				LoginType = nameof(ILoginChoiceEager),
-				Account = account.MaskedLogEntry ?? "[null]",
-				LocaleName = locale.Name
-			});
+				Serilog.Log.Logger.Information("{@DebugInfo}", new
+				{
+					LoginType = nameof(ILoginChoiceEager),
+					Account = account.MaskedLogEntry ?? "[null]",
+					LocaleName = locale.Name
+				});
 
-			var api = await EzApiCreator.GetApiAsync(
-				LoginChoiceFactory(account),
-				locale,
-				AudibleApiStorage.AccountsSettingsFile,
-				account.GetIdentityTokensJsonPath());
+				var api = await EzApiCreator.GetApiAsync(
+					LoginChoiceFactory(account),
+					locale,
+					AudibleApiStorage.AccountsSettingsFile,
+					account.GetIdentityTokensJsonPath());
 
-			return new ApiExtended(api);
+				return new ApiExtended(api);
+			}
+			finally
+			{
+				InteractiveLoginGate.Release();
+			}
 		}
 	}
 

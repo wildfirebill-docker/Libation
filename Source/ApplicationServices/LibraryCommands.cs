@@ -62,7 +62,7 @@ public static class LibraryCommands
 			try
 			{
 				logTime($"pre {nameof(scanAccountsAsync)} all");
-				var libraryItems = await scanAccountsAsync(accounts, libraryOptions);
+				var libraryItems = await scanAccountsAsync(accounts, libraryOptions, allowInteractiveLogin: true);
 				logTime($"post {nameof(scanAccountsAsync)} all");
 
 				var totalCount = libraryItems.Count;
@@ -108,7 +108,10 @@ public static class LibraryCommands
 	}
 
 	#region FULL LIBRARY scan and import
-	public static async Task<(int totalCount, int newCount)> ImportAccountAsync(params Account[]? accounts)
+	public static Task<(int totalCount, int newCount)> ImportAccountAsync(params Account[]? accounts)
+		=> ImportAccountAsync(accounts, allowInteractiveLogin: true);
+
+	public static async Task<(int totalCount, int newCount)> ImportAccountAsync(Account[]? accounts, bool allowInteractiveLogin)
 	{
 		logRestart();
 
@@ -136,7 +139,7 @@ public static class LibraryCommands
 						| LibraryOptions.ResponseGroupOptions.IsFinished,
 					ImageSizes = LibraryOptions.ImageSizeOptions._500 | LibraryOptions.ImageSizeOptions._1215
 				};
-				var importItems = await scanAccountsAsync(accounts, libraryOptions);
+				var importItems = await scanAccountsAsync(accounts, libraryOptions, allowInteractiveLogin);
 				logTime($"post {nameof(scanAccountsAsync)} all");
 
 				var totalCount = importItems.Count;
@@ -272,7 +275,7 @@ public static class LibraryCommands
 		return null;
 	}
 
-	private static async Task<List<ImportItem>> scanAccountsAsync(Account[] accounts, LibraryOptions libraryOptions)
+	private static async Task<List<ImportItem>> scanAccountsAsync(Account[] accounts, LibraryOptions libraryOptions, bool allowInteractiveLogin)
 	{
 		var tasks = new List<Task<List<ImportItem>>>();
 
@@ -288,10 +291,14 @@ public static class LibraryCommands
 			try
 			{
 				// get APIs in serial b/c of logins. do NOT move inside of parallel (Task.WhenAll)
-				var apiExtended = await ApiExtended.CreateAsync(account);
+				var apiExtended = await ApiExtended.CreateAsync(account, allowInteractiveLogin);
 
 				// add scanAccountAsync as a TASK: do not await
 				tasks.Add(scanAccountAsync(apiExtended, account, libraryOptions, archiver));
+			}
+			catch (Exception ex) when (!allowInteractiveLogin && AuthenticationExceptionHelper.IsAuthenticationFailure(ex))
+			{
+				throw;
 			}
 			catch (Exception ex)
 			{

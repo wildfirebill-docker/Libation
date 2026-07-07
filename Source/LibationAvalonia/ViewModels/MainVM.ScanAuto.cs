@@ -2,6 +2,8 @@
 using AudibleUtilities;
 using Dinah.Core;
 using LibationFileManager;
+using LibationUiBase;
+using LibationUiBase.Forms;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,45 +13,37 @@ namespace LibationAvalonia.ViewModels;
 
 partial class MainVM
 {
-	private readonly InterruptableTimer autoScanTimer = new InterruptableTimer(TimeSpan.FromMinutes(5));
+	private readonly InterruptableTimer autoScanTimer = new(TimeSpan.FromMinutes(5));
+	private AutoScanRunner? autoScanRunner;
 
 	private void Configure_ScanAuto()
 	{
-		// subscribe as async/non-blocking. I'd actually rather prefer blocking but real-world testing found that caused a deadlock in the AudibleAPI
-		autoScanTimer.Elapsed += async (_, __) =>
-		{
-			using var persister = AudibleApiStorage.GetAccountsSettingsPersister();
-			var accounts = persister.AccountsSettings
-				.GetAll()
-				.Where(a => a.LibraryScan)
-				.ToArray();
+		autoScanRunner = new AutoScanRunner(
+			isAutoScanEnabled: () => Configuration.Instance.AutoScan,
+			pauseTimer: () => autoScanTimer.Stop(),
+			resumeTimer: () => autoScanTimer.PerformNow(),
+			notifyAuthRequired: notifyAutoScanAuthRequiredAsync);
 
-			// in autoScan, new books SHALL NOT show dialog
-			try
-			{
-				await Task.Run(() => LibraryCommands.ImportAccountAsync(accounts));
-			}
-			catch (OperationCanceledException)
-			{
-				Serilog.Log.Information("Audible login attempt cancelled by user");
-			}
-			catch (Exception ex)
-			{
-				Serilog.Log.Logger.Error(ex, "Error invoking auto-scan");
-			}
-		};
+		autoScanTimer.Elapsed += async (_, __) => await autoScanRunner.RunAsync();
 
-		// if enabled: begin on load
 		MainWindow.Loaded += startAutoScan;
 
-		// if new 'default' account is added, run autoscan
 		AccountsSettingsPersister.Saving += accountsPreSave;
 		AccountsSettingsPersister.Saved += accountsPostSave;
 
-		// when autoscan setting is changed, update menu checkbox and run autoscan
 		Configuration.Instance.PropertyChanged += startAutoScan;
 	}
 
+	private async Task notifyAutoScanAuthRequiredAsync()
+	{
+		await MessageBox.Show(
+			MainWindow,
+			"Libation could not refresh your Audible library because your login session expired.\n\n"
+			+ "Background auto-scan has been paused. Use Import > Scan Library to log in again to resume periodic scans.",
+			"Auto-scan paused - login required",
+			MessageBoxButtons.OK,
+			MessageBoxIcon.Warning);
+	}
 
 	private List<(string AccountId, string LocaleName)>? preSaveDefaultAccounts;
 	private List<(string AccountId, string LocaleName)> getDefaultAccounts()
@@ -75,6 +69,7 @@ partial class MainVM
 	[PropertyChangeFilter(nameof(Configuration.AutoScan))]
 	private void startAutoScan(object? sender = null, EventArgs? e = null)
 	{
+		autoScanRunner?.OnAutoScanSettingChanged();
 		AutoScanChecked = Configuration.Instance.AutoScan;
 		if (AutoScanChecked)
 			autoScanTimer.PerformNow();

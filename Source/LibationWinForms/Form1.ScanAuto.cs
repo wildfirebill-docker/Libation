@@ -2,10 +2,12 @@
 using AudibleUtilities;
 using Dinah.Core;
 using LibationFileManager;
+using LibationUiBase;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Windows.Forms;
 
 namespace LibationWinForms;
 
@@ -13,55 +15,58 @@ namespace LibationWinForms;
 public partial class Form1
 {
 	private InterruptableTimer? autoScanTimer;
+	private AutoScanRunner? autoScanRunner;
 
 	private void Configure_ScanAuto()
 	{
-		// creating InterruptableTimer inside 'Configure_' is a break from the pattern. As long as no one else needs to access or subscribe to it, this is ok
+        // creating InterruptableTimer inside 'Configure_' is a break from the pattern. As long as no one else needs to access or subscribe to it, this is ok
 
-		autoScanTimer = new InterruptableTimer(TimeSpan.FromMinutes(5));
+        autoScanTimer = new InterruptableTimer(TimeSpan.FromMinutes(5));
+		autoScanRunner = new AutoScanRunner(
+			isAutoScanEnabled: () => Configuration.Instance.AutoScan,
+			pauseTimer: () => autoScanTimer?.Stop(),
+			resumeTimer: () => autoScanTimer?.PerformNow(),
+			notifyAuthRequired: notifyAutoScanAuthRequiredAsync);
 
-		// subscribe as async/non-blocking. I'd actually rather prefer blocking but real-world testing found that caused a deadlock in the AudibleAPI
-		autoScanTimer.Elapsed += async (_, __) =>
-		{
-			using var persister = AudibleApiStorage.GetAccountsSettingsPersister();
-			var accounts = persister.AccountsSettings
-				.GetAll()
-				.Where(a => a.LibraryScan)
-				.ToArray();
+		autoScanTimer.Elapsed += async (_, __) => await autoScanRunner.RunAsync();
 
-			// in autoScan, new books SHALL NOT show dialog
-			try
-			{
-				await Task.Run(() => LibraryCommands.ImportAccountAsync(accounts));
-			}
-			catch (OperationCanceledException)
-			{
-				Serilog.Log.Information("Audible login attempt cancelled by user");
-			}
-			catch (Exception ex)
-			{
-				Serilog.Log.Logger.Error(ex, "Error invoking auto-scan");
-			}
-		};
-
-		// load init state to menu checkbox
 		Load += updateAutoScanLibraryToolStripMenuItem;
-		// if enabled: begin on load
 		Shown += startAutoScan;
 
-		// if new 'default' account is added, run autoscan
 		AccountsSettingsPersister.Saving += accountsPreSave;
 		AccountsSettingsPersister.Saved += accountsPostSave;
 
 		Configuration.Instance.PropertyChanged += Configuration_PropertyChanged;
 	}
 
+	private void notifyAutoScanAuthRequired()
+	{
+		MessageBox.Show(
+			this,
+			"Libation could not refresh your Audible library because your login session expired.\n\n"
+			+ "Background auto-scan has been paused. Use Import > Scan Library to log in again to resume periodic scans.",
+			"Auto-scan paused - login required",
+			MessageBoxButtons.OK,
+			MessageBoxIcon.Warning);
+	}
+
+	private Task notifyAutoScanAuthRequiredAsync()
+	{
+		if (InvokeRequired)
+		{
+			Invoke(notifyAutoScanAuthRequired);
+			return Task.CompletedTask;
+		}
+
+		notifyAutoScanAuthRequired();
+		return Task.CompletedTask;
+	}
 
 	[PropertyChangeFilter(nameof(Configuration.AutoScan))]
 	private void Configuration_PropertyChanged(object? sender, PropertyChangedEventArgsEx e)
-	{
-		// when autoscan setting is changed, update menu checkbox and run autoscan
-		updateAutoScanLibraryToolStripMenuItem(sender, e);
+    {
+        // when autoscan setting is changed, update menu checkbox and run autoscan
+        updateAutoScanLibraryToolStripMenuItem(sender, e);
 		startAutoScan(sender, e);
 	}
 
@@ -89,6 +94,7 @@ public partial class Form1
 
 	private void startAutoScan(object? sender = null, EventArgs? e = null)
 	{
+		autoScanRunner?.OnAutoScanSettingChanged();
 		if (Configuration.Instance.AutoScan)
 			autoScanTimer?.PerformNow();
 		else
