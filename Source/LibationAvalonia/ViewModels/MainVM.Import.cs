@@ -212,6 +212,7 @@ public partial class MainVM
 		try
 		{
 			var (totalProcessed, newAdded) = await Task.Run(() => LibraryCommands.ImportAccountAsync(accounts));
+			autoScanRunner?.OnManualScanSucceeded();
 
 			// this is here instead of ScanEnd so that the following is only possible when it's user-initiated, not automatic loop
 			if (Configuration.Instance.ShowImportedStats && newAdded > 0)
