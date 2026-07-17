@@ -110,6 +110,9 @@ mv $BUNDLE_MACOS/libation.icns $BUNDLE_RESOURCES/libation.icns
 echo "Moving Info.plist file..."
 mv $BUNDLE_MACOS/Info.plist $BUNDLE_CONTENTS/Info.plist
 
+echo "Writing PkgInfo file..."
+printf 'APPL????' > $BUNDLE_CONTENTS/PkgInfo
+
 echo "Moving Libation_DS_Store file..."
 mv $BUNDLE_MACOS/Libation_DS_Store ./Libation_DS_Store
 
