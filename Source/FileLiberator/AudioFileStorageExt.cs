@@ -31,19 +31,37 @@ public static class AudioFileStorageExt
 					account: libraryBook.Account);
 				if (seriesParent is not null)
 				{
-					return Templates.Folder.GetFilename(seriesParent.ToDto(), books, "");
+					return maybePlusFolder(books, seriesParent, libraryBook);
 				}
 			}
 		}
-		return Templates.Folder.GetFilename(libraryBook.ToDto(), books, "");
+		return maybePlusFolder(books, libraryBook);
+	}
+
+	private static string maybePlusFolder(string books, LibraryBook libraryBook)
+		=> maybePlusFolder(books, libraryBook, libraryBook);
+
+	private static string maybePlusFolder(string books, LibraryBook folderBook, LibraryBook plusCheckBook)
+	{
+		var dir = Templates.Folder.GetFilename(folderBook.ToDto(), books, "");
+		if (plusCheckBook.IsAudiblePlus)
+			dir = System.IO.Path.Combine(dir, "(free)");
+		return dir;
 	}
 
 	/// <summary>
 	/// PDF: audio file does not exist
 	/// </summary>
 	public static string GetBooksDirectoryFilename(this AudioFileStorage _, LibraryBook libraryBook, string extension, bool returnFirstExisting = false)
-		=> AudibleFileStorage.BooksDirectory is { } books ? Templates.File.GetFilename(libraryBook.ToDto(), books, extension, null, returnFirstExisting)
-		: throw new InvalidOperationException("Books directory is not set.");
+	{
+		if (AudibleFileStorage.BooksDirectory is not { } books)
+			throw new InvalidOperationException("Books directory is not set.");
+
+		if (libraryBook.IsAudiblePlus)
+			books = System.IO.Path.Combine(books, "(free)");
+
+		return Templates.File.GetFilename(libraryBook.ToDto(), books, extension, null, returnFirstExisting);
+	}
 
 	/// <summary>
 	/// PDF: audio file already exists
