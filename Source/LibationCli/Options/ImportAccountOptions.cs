@@ -59,12 +59,10 @@ internal class ImportAccountOptions : OptionsBase
 				Console.Error.WriteLine(result.Message ?? "Invalid import file.");
 				Environment.ExitCode = (int)ExitCode.RunTimeError;
 				return;
-			case Mkb79ImportOutcome.DuplicateAccount when result.Account is { } dup:
-				Console.Error.WriteLine(
-					$"An account with that account id and country already exists.{Environment.NewLine}"
-					+ $"Account ID: {dup.AccountId}{Environment.NewLine}Country: {dup.Locale?.Name}");
-				Environment.ExitCode = (int)ExitCode.RunTimeError;
-				return;
+		case Mkb79ImportOutcome.DuplicateAccount when result.Account is { } dup:
+			Console.WriteLine(
+				$"Account already exists: {dup.AccountId} ({dup.Locale?.Name})");
+			return;
 			case Mkb79ImportOutcome.Success when result.Account is { } account:
 				Console.WriteLine(
 					$"Imported account: {account.AccountName} ({account.AccountId}, {account.Locale?.Name})");
