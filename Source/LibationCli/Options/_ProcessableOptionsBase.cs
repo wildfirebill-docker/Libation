@@ -145,7 +145,9 @@ public abstract class ProcessableOptionsBase : OptionsBase
 		catch (Exception ex)
 		{
 			var msg = "Error processing book. Skipping. This book will be tried again on next attempt. For options of skipping or marking as error, retry with main Libation app.";
-			Console.Error.WriteLine(msg + ". See log for more details.");
+			Console.Error.WriteLine($"{msg}: {ex.GetType().Name}: {ex.Message}");
+			if (ex.InnerException is not null)
+				Console.Error.WriteLine($"  Inner: {ex.InnerException.GetType().Name}: {ex.InnerException.Message}");
 			Serilog.Log.Logger.Error(ex, $"{msg} {{@DebugInfo}}", new { Book = libraryBook.LogFriendly() });
 		}
 	}
