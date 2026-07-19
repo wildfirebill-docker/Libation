@@ -56,7 +56,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=v13.6
+            type=raw,value=v13.6.1
             type=ref,event=branch
             type=ref,event=tag
 
