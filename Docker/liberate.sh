@@ -138,6 +138,30 @@ setup_db() {
   ln -s "${FILE}" "${LINK}"
 }
 
+import_accounts() {
+  local file imported=0
+  shopt -s nullglob
+  for file in "${LIBATION_CONFIG_DIR}"/*.json; do
+    [ -f "${file}" ] || continue
+    local basename
+    basename=$(basename "${file}")
+    case "${basename}" in
+      AccountsSettings.json|Settings.json) continue ;;
+    esac
+    info "importing account from ${basename}"
+    if /libation/LibationCli import-account "${file}"; then
+      imported=1
+    else
+      warn "import failed for ${basename}"
+    fi
+  done
+  shopt -u nullglob
+  if [ "${imported}" -eq 1 ]; then
+    info "saving AccountsSettings.json back to config directory"
+    cp "${LIBATION_CONFIG_INTERNAL}/AccountsSettings.json" "${LIBATION_CONFIG_DIR}/AccountsSettings.json"
+  fi
+}
+
 run() {
   info "scanning accounts"
   /libation/LibationCli scan
@@ -164,6 +188,8 @@ main() {
     DB_LOCATION=${LIBATION_CONFIG_DIR}
   fi
   setup_db ${DB_LOCATION}
+
+  import_accounts
 
   # Try to warn if books dir wasn't mounted in
   if ! is_mounted "${LIBATION_BOOKS_DIR}";
